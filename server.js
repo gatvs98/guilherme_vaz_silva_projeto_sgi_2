@@ -9,16 +9,20 @@ const User= require('./models/user');
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 
 const passport = require('passport');
+const { Session } = require('express-session');
 var userProfile;
 
 app.set('view engine', 'ejs');
 
 app.use(passport.initialize());
+app.use(passport.session());
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
 // ==== SET PASSPORT ===
 passport.serializeUser(function (user, cb) {
+    console.log('user', user)
     cb(null, user);
 });
 
@@ -34,8 +38,13 @@ passport.use(new GoogleStrategy(
     },
     function (accessToken, refreshToken, profile, done) {
         const user = new User({
+            id: profile.id,
             username: profile.displayName,
             email: profile.emails[0].value
+        })
+
+        const session = new Session({
+            
         })
         userProfile = profile;
         user.save().then((res) => {
