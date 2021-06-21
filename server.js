@@ -3,8 +3,10 @@ var app = express();
 const bodyParser  = require('body-parser');
 const mongoose = require('mongoose');
 const sessionStorage = require('sessionstorage');
+const session = require('express-session');
 
 const User= require('./models/user');
+const SessionObject = require('./models/session');
 
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 
@@ -20,14 +22,22 @@ app.use(passport.session());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
+app.use(session({
+    secret: 'SECRET',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { maxAge: 60 * 60 * 1000 }
+  }));
+
 // ==== SET PASSPORT ===
-passport.serializeUser(function (user, cb) {
-    console.log('user', user)
-    cb(null, user);
+passport.serializeUser(function (user, done) {
+    console.log('serializing', user)
+    done(null, user);
 });
 
-passport.deserializeUser(function (obj, cb) {
-    cb(null, obj);
+passport.deserializeUser(function (user, done) {
+    console.log('deserializing', user);
+    done(null, user);
 });
 
 passport.use(new GoogleStrategy(
@@ -43,9 +53,11 @@ passport.use(new GoogleStrategy(
             email: profile.emails[0].value
         })
 
-        const session = new Session({
-            
-        })
+        const session = new SessionObject({
+            accessToken: accessToken,
+            refreshToken: refreshToken
+        });
+        session.save().then(res => console.log(res));
         userProfile = profile;
         user.save().then((res) => {
             sessionStorage.setItem('userId', res._id);
@@ -67,6 +79,7 @@ mongoose.connection.once('open',function(){
 
 // Check if user is Authenticated
 function ensureAuthenticated(req, res, next) {
+    console.log('user', req.session);
     if (!sessionStorage.getItem('userId')) {
         res.redirect('/not-authenticated')
     } else {
