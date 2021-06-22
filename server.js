@@ -2,19 +2,24 @@ var express = require('express');
 var app = express();
 const bodyParser  = require('body-parser');
 const mongoose = require('mongoose');
-const sessionStorage = require('sessionstorage');
-const session = require('express-session');
+
+const cookieSession = require("cookie-session");
 
 const User= require('./models/user');
-const SessionObject = require('./models/session');
 
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 
 const passport = require('passport');
-const { Session } = require('express-session');
-var userProfile;
+let userProfile;
 
 app.set('view engine', 'ejs');
+
+const cookieKey = "2bcDhT6BNedQywiu";
+
+app.use(cookieSession({
+    keys:[cookieKey],
+    maxAge: 60 * 60 * 1000
+}));
 
 app.use(passport.initialize());
 app.use(passport.session());
@@ -22,21 +27,14 @@ app.use(passport.session());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
-app.use(session({
-    secret: 'SECRET',
-    resave: false,
-    saveUninitialized: true,
-    cookie: { maxAge: 60 * 60 * 1000 }
-  }));
+
 
 // ==== SET PASSPORT ===
 passport.serializeUser(function (user, done) {
-    console.log('serializing', user)
     done(null, user);
 });
 
 passport.deserializeUser(function (user, done) {
-    console.log('deserializing', user);
     done(null, user);
 });
 
@@ -47,28 +45,28 @@ passport.use(new GoogleStrategy(
         callbackURL: "/auth/google/redirect"
     },
     function (accessToken, refreshToken, profile, done) {
-        const user = new User({
-            id: profile.id,
+        userProfile = {
             username: profile.displayName,
             email: profile.emails[0].value
-        })
-
-        const session = new SessionObject({
-            accessToken: accessToken,
-            refreshToken: refreshToken
-        });
-        session.save().then(res => console.log(res));
-        userProfile = profile;
-        user.save().then((res) => {
-            sessionStorage.setItem('userId', res._id);
-            return done(null, userProfile);
+        };
+        User.findOne({'google.id': profile.id}).then((user) =>{
+            if(user) {  
+                return done(null, userProfile);
+            } else {
+                const newUser = new User({
+                    google: profile
+                })
+                newUser.save().then((newUser) => {
+                    return done(null, newUser);
+                })
+            }
         })
     }
 ));
 // ==== END PASSPORT ====
 
 // ==== DATABASE ====
-mongoose.connect('mongodb://localhost/projeto_sgi', {useNewUrlParser: true});
+mongoose.connect('mongodb://localhost/test', {useNewUrlParser: true});
 mongoose.connection.once('open',function(){
     console.log('Database connected Successfully');
 }).on('error',function(err){
@@ -79,19 +77,11 @@ mongoose.connection.once('open',function(){
 
 // Check if user is Authenticated
 function ensureAuthenticated(req, res, next) {
-    console.log('user', req.session);
-    if (!sessionStorage.getItem('userId')) {
+    if (!req.user || !userProfile) {
         res.redirect('/not-authenticated')
     } else {
-        User.findById(sessionStorage.getItem('userId'), (err, user) => {
-            if (user){
-                userProfile = user;
-                return next();
-            }
-            if (err) {
-                res.redirect('/not-authenticated')
-            }
-        });
+        let user = userProfile;
+        return next(null, user)
     }
     
     
@@ -107,9 +97,9 @@ app.get('/login', (req, res) => {
 })
 
 app.get('/home', ensureAuthenticated, (req, res) => {
-    res.render('pages/home', {
-        user: userProfile
-    });
+    let user = userProfile;
+    console.log('IN HOME', user)
+    res.render('pages/home', user);
 })
 
 app.get('/not-authenticated', (req, res) => {
